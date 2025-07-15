@@ -52,7 +52,7 @@ class ProjectController extends Controller
             // Handle logo upload
             if ($request->hasFile('logo')) {
                 $path = $request->file('logo')->store('logos', 'public');
-                $data['logo_url'] = asset('storage/' . $path);
+                $data['logo_url'] = $path; // Store only the path, not the full URL
             }
 
             $project = Project::create($data);
@@ -105,7 +105,7 @@ class ProjectController extends Controller
 
             if ($request->hasFile('logo')) {
                 $path = $request->file('logo')->store('logos', 'public');
-                $data['logo_url'] = asset('storage/' . $path);
+                $data['logo_url'] = $path; // Store only the path, not the full URL
             }
 
             $project->update($data);

@@ -8,13 +8,13 @@ class Category extends Model
 {
     //
     public function project()
-    {
-        return $this->belongsTo(Project::class);
-    }
+{
+    return $this->belongsTo(Project::class);
+}
 
-    public function screens(){
-        return $this->hasMany(Screen::class);
-    }
+public function screens(){
+    return $this->hasMany(Screen::class);
+}
 
     protected $fillable = ['name', 'description', 'project_id'];
 }

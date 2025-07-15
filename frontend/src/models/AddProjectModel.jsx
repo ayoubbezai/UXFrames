@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { projectsServices } from '../services/projectsServices';
 import { toast } from 'react-hot-toast';
 
-const AddProjectModel = ({ isOpen, onClose , refresh }) => {
+const AddProjectModel = ({ isOpen, onClose, refresh }) => {
     const [formData, setFormData] = useState({
         name: '',
         description: '',
@@ -35,8 +35,15 @@ const AddProjectModel = ({ isOpen, onClose , refresh }) => {
         setIsLoading(true);
 
         try {
-            console.log('Form Data:', formData);
-            const response = await projectsServices.addProjects(formData);
+            // Convert formData object to FormData instance
+            const data = new FormData();
+            Object.entries(formData).forEach(([key, value]) => {
+                if (value !== null && value !== undefined) {
+                    data.append(key, value);
+                }
+            });
+
+            const response = await projectsServices.addProjects(data);
 
             if (response.success) {
                 toast.success('Project created successfully!');

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Screen;
+use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -17,23 +18,9 @@ class ScreenController extends Controller
             'project_id' => 'required|exists:projects,id'
         ]);
 
-        $screens = Screen::with('category:id,name')
+        $screens = Screen::with('category')
             ->where('project_id', $request->project_id)
-            ->select('id', 'title', 'purpose as description', 'image_url', 'category_id')
             ->get();
-
-        $screens = $screens->map(function ($screen) {
-            return [
-                'id' => $screen->id,
-                'title' => $screen->title,
-                'description' => $screen->description,
-                'image_url' => $screen->image_url,
-                'category' => $screen->category ? [
-                    'id' => $screen->category->id,
-                    'name' => $screen->category->name,
-                ] : null,
-            ];
-        });
 
         return response()->json([
             'success' => true,
@@ -51,35 +38,92 @@ class ScreenController extends Controller
             'project_id' => 'required|exists:projects,id',
             'category_id' => 'required|exists:categories,id',
             'title' => 'required|string',
-            'type' => 'in:web,mobile,other',
+            'type' => 'required|in:web,mobile,other',
             'purpose' => 'nullable|string',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'actions' => 'nullable|array',
-            'inputs' => 'nullable|array',
-            'static_content' => 'nullable|array',
-            'navigations' => 'nullable|array',
-            'states' => 'nullable|array',
-            'data' => 'nullable|array',
+            'actions' => 'nullable|string', // Changed to string to handle JSON
+            'inputs' => 'nullable|string', // Changed to string to handle JSON
+            'static_content' => 'nullable|string', // Changed to string to handle JSON
+            'navigations' => 'nullable|string', // Changed to string to handle JSON
+            'states' => 'nullable|string', // Changed to string to handle JSON
+            'data' => 'nullable|string', // Changed to string to handle JSON
         ]);
+
+        // Debug logging
+        \Log::info('Screen creation request:', [
+            'project_id' => $data['project_id'],
+            'category_id' => $data['category_id'],
+            'title' => $data['title']
+        ]);
+
+        // Verify category belongs to the project
+        $category = Category::find($data['category_id']);
+        if (!$category) {
+            \Log::error('Category not found:', ['category_id' => $data['category_id']]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Category not found',
+                'data' => null
+            ], 404);
+        }
+
+        // Convert to integers for proper comparison
+        $categoryProjectId = (int) $category->project_id;
+        $requestProjectId = (int) $data['project_id'];
+
+        \Log::info('Category validation:', [
+            'category_project_id' => $categoryProjectId,
+            'request_project_id' => $requestProjectId,
+            'category_id' => $data['category_id'],
+            'category_name' => $category->name
+        ]);
+
+        if ($categoryProjectId !== $requestProjectId) {
+            \Log::error('Category project mismatch:', [
+                'category_project_id' => $categoryProjectId,
+                'request_project_id' => $requestProjectId,
+                'category_id' => $data['category_id']
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'This category does not belong to the specified project',
+                'data' => [
+                    'category_project_id' => $categoryProjectId,
+                    'request_project_id' => $requestProjectId,
+                    'category_id' => $data['category_id']
+                ]
+            ], 400);
+        }
 
         if ($request->hasFile('image')) {
             $path = $request->file('image')->store('screens', 'public');
-            $data['image_url'] = asset('storage/' . $path);
+            $data['image_url'] = $path; // Store only the path, not the full URL
         }
 
-        // JSON encode array fields
+        // Convert JSON strings to arrays for storage
         foreach (['actions', 'inputs', 'static_content', 'navigations', 'states', 'data'] as $jsonField) {
-            if (isset($data[$jsonField])) {
-                $data[$jsonField] = json_encode($data[$jsonField]);
+            if (isset($data[$jsonField]) && is_string($data[$jsonField])) {
+                $decoded = json_decode($data[$jsonField], true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $data[$jsonField] = $decoded;
+                } else {
+                    // If JSON is invalid, set as empty array
+                    $data[$jsonField] = [];
+                }
+            } else {
+                // If field is not provided, set as empty array
+                $data[$jsonField] = [];
             }
         }
 
         $screen = Screen::create($data);
 
+        \Log::info('Screen created successfully:', ['screen_id' => $screen->id]);
+
         return response()->json([
             'success' => true,
             'message' => 'Screen created successfully',
-            'data' => $screen
+            'data' => $screen->load('category')
         ], 201);
     }
 
@@ -88,7 +132,7 @@ class ScreenController extends Controller
      */
     public function show(Screen $screen)
     {
-        $screen->load('category:id,name');
+        $screen->load('category');
 
         return response()->json([
             'success' => true,
@@ -104,41 +148,80 @@ class ScreenController extends Controller
     {
         $data = $request->validate([
             'title' => 'sometimes|required|string',
-            'type' => 'in:web,mobile,other',
+            'type' => 'sometimes|required|in:web,mobile,other',
             'purpose' => 'nullable|string',
-            'category_id' => 'exists:categories,id',
+            'category_id' => 'sometimes|required|exists:categories,id',
             'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'actions' => 'nullable|array',
-            'inputs' => 'nullable|array',
-            'static_content' => 'nullable|array',
-            'navigations' => 'nullable|array',
-            'states' => 'nullable|array',
-            'data' => 'nullable|array',
+            'actions' => 'nullable|string', // Changed to string to handle JSON
+            'inputs' => 'nullable|string', // Changed to string to handle JSON
+            'static_content' => 'nullable|string', // Changed to string to handle JSON
+            'navigations' => 'nullable|string', // Changed to string to handle JSON
+            'states' => 'nullable|string', // Changed to string to handle JSON
+            'data' => 'nullable|string', // Changed to string to handle JSON
         ]);
 
+        // Verify category belongs to the project if category_id is being updated
+        if (isset($data['category_id'])) {
+            $category = Category::find($data['category_id']);
+            if (!$category) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Category not found',
+                    'data' => null
+                ], 404);
+            }
+
+            // Convert to integers for proper comparison
+            $categoryProjectId = (int) $category->project_id;
+            $screenProjectId = (int) $screen->project_id;
+
+            if ($categoryProjectId !== $screenProjectId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This category does not belong to the specified project',
+                    'data' => [
+                        'category_project_id' => $categoryProjectId,
+                        'screen_project_id' => $screenProjectId,
+                        'category_id' => $data['category_id']
+                    ]
+                ], 400);
+            }
+        }
+
         if ($request->hasFile('image')) {
-            // Delete old if exists
+            // Delete old image if exists
             if ($screen->image_url) {
                 $path = str_replace(asset('storage') . '/', '', $screen->image_url);
                 Storage::disk('public')->delete($path);
             }
 
             $path = $request->file('image')->store('screens', 'public');
-            $data['image_url'] = asset('storage/' . $path);
+            $data['image_url'] = $path; // Store only the path, not the full URL
         }
 
+        // Convert JSON strings to arrays for storage
         foreach (['actions', 'inputs', 'static_content', 'navigations', 'states', 'data'] as $jsonField) {
-            if (isset($data[$jsonField])) {
-                $data[$jsonField] = json_encode($data[$jsonField]);
+            if (isset($data[$jsonField]) && is_string($data[$jsonField])) {
+                $decoded = json_decode($data[$jsonField], true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $data[$jsonField] = $decoded;
+                } else {
+                    // If JSON is invalid, set as empty array
+                    $data[$jsonField] = [];
             }
+            }
+            // If field is not provided, don't update it (keep existing value)
         }
 
         $screen->update($data);
 
+        // Debug log to confirm update
+        \Log::info('Screen updated:', $screen->toArray());
+
         return response()->json([
             'success' => true,
             'message' => 'Screen updated successfully',
-            'data' => $screen
+            'data' => $screen->load('category')
         ]);
     }
 
@@ -147,6 +230,7 @@ class ScreenController extends Controller
      */
     public function destroy(Screen $screen)
     {
+        try {
         if ($screen->image_url) {
             $path = str_replace(asset('storage') . '/', '', $screen->image_url);
             Storage::disk('public')->delete($path);
@@ -158,5 +242,12 @@ class ScreenController extends Controller
             'success' => true,
             'message' => 'Screen deleted successfully'
         ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete screen',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }

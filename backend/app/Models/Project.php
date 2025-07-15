@@ -20,13 +20,12 @@ class Project extends Model
         'docs_url',
         'live_url',
         'other_url',
-        'category_id',
     ];
 
     public function categories()
-    {
-        return $this->hasMany(Category::class);
-    }
+{
+    return $this->hasMany(Category::class);
+}
 
     public function screens(){
         return $this->hasMany(Screen::class);
